@@ -1,0 +1,23 @@
+{
+  "name": "roblox-group-proxy",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "roblox",
+    "proxy",
+    "group",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "A proxy server for fetching Roblox group members",
+  "dependencies": {
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2"
+  }
+}
