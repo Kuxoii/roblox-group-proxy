@@ -3,18 +3,23 @@ import fetch from "node-fetch";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const GROUP_ID = 14114533; // Your Roblox group ID
 
-// Allow JSON responses
 app.use(express.json());
 
+// Endpoint: GET /members?groupId=12345
 app.get("/members", async (req, res) => {
+    const groupId = parseInt(req.query.groupId, 10);
+
+    if (!groupId || isNaN(groupId)) {
+        return res.status(400).json({ error: "Missing or invalid groupId parameter" });
+    }
+
     try {
         let cursor = "";
         const members = [];
 
         do {
-            const url = `https://groups.roblox.com/v1/groups/${GROUP_ID}/users?sortOrder=Asc&limit=100${cursor ? `&cursor=${cursor}` : ""}`;
+            const url = `https://groups.roblox.com/v1/groups/${groupId}/users?sortOrder=Asc&limit=100${cursor ? `&cursor=${cursor}` : ""}`;
             const response = await fetch(url);
 
             if (!response.ok) {
@@ -22,8 +27,7 @@ app.get("/members", async (req, res) => {
             }
 
             const data = await response.json();
-
-            if (!data.data) break; // Safety: exit if response is malformed
+            if (!data.data) break;
 
             members.push(...data.data);
             cursor = data.nextPageCursor;
@@ -31,13 +35,13 @@ app.get("/members", async (req, res) => {
 
         res.setHeader("Content-Type", "application/json");
         res.status(200).json({
-            groupId: GROUP_ID,
+            groupId: groupId,
             totalMembers: members.length,
             members: members
         });
 
     } catch (err) {
-        console.error("Error fetching group members:", err.message);
+        console.error(`Error fetching group ${groupId} members:`, err.message);
         res.status(500).json({ error: "Failed to fetch members", details: err.message });
     }
 });
