@@ -6,7 +6,9 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Endpoint: GET /members?groupId=12345
+/* =====================================================
+   Endpoint: GET /members?groupId=12345
+   ===================================================== */
 app.get("/members", async (req, res) => {
     const groupId = parseInt(req.query.groupId, 10);
 
@@ -43,6 +45,38 @@ app.get("/members", async (req, res) => {
     } catch (err) {
         console.error(`Error fetching group ${groupId} members:`, err.message);
         res.status(500).json({ error: "Failed to fetch members", details: err.message });
+    }
+});
+
+app.get("/group-icon", async (req, res) => {
+    const groupId = parseInt(req.query.groupId, 10);
+
+    if (!groupId || isNaN(groupId)) {
+        return res.status(400).send("Missing or invalid groupId");
+    }
+
+    try {
+        const thumbApi =
+            `https://thumbnails.roblox.com/v1/groups/icons?groupIds=${groupId}&size=420x420&format=Png&isCircular=false`;
+
+        const response = await fetch(thumbApi);
+
+        if (!response.ok) {
+            throw new Error(`Thumbnail API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const imageUrl = data?.data?.[0]?.imageUrl;
+
+        if (!imageUrl) {
+            return res.status(404).send("Group icon not found");
+        }
+
+        res.redirect(imageUrl);
+
+    } catch (err) {
+        console.error(`Error fetching group icon ${groupId}:`, err.message);
+        res.status(500).send("Failed to fetch group icon");
     }
 });
 
