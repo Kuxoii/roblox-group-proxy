@@ -34,6 +34,19 @@ function isValidDelivery(body) {
   );
 }
 
+function deliveryResult(explicitResult, payload) {
+  if (explicitResult === "Victory" || explicitResult === "Defeat") {
+    return explicitResult;
+  }
+
+  const resultField = payload?.embeds?.[0]?.fields?.find(
+    (field) => field?.name === "Result",
+  );
+  if (resultField?.value === "WIN") return "Victory";
+  if (resultField?.value === "LOSS") return "Defeat";
+  return null;
+}
+
 function validWorldRecord(record) {
   return Boolean(
     record &&
@@ -98,7 +111,7 @@ async function setDeliveryStatus(env, deliveryId, status, lastError = null) {
 }
 
 async function enqueueRequest(request, env) {
-  if (!env.RELAY_SECRET || !env.DISCORD_WEBHOOK_URL) {
+  if (!env.RELAY_SECRET) {
     return json({ error: "Relay secrets are not configured" }, 503);
   }
 
@@ -125,6 +138,16 @@ async function enqueueRequest(request, env) {
 
   if (!isValidDelivery(body)) {
     return json({ error: "Invalid delivery payload" }, 400);
+  }
+
+  const result = deliveryResult(body.result, body.payload);
+  if (!result) {
+    return json({ error: "Missing or invalid Solo result" }, 400);
+  }
+  const destinationConfigured =
+    result === "Victory" ? env.WIN_WEBHOOK_URL : env.DISCORD_WEBHOOK_URL;
+  if (!destinationConfigured) {
+    return json({ error: "Destination webhook is not configured" }, 503);
   }
 
   // Never allow a game-controlled payload to ping Discord users or roles.
@@ -182,6 +205,7 @@ async function enqueueRequest(request, env) {
   await env.SOLO_QUEUE.send({
     deliveryId: body.deliveryId,
     payload: body.payload,
+    result,
     worldRecord,
   });
 
@@ -192,11 +216,12 @@ async function consumeMessage(message, env) {
   const delivery = message.body;
   const deliveryId = delivery?.deliveryId;
   const payload = delivery?.payload;
+  const result = deliveryResult(delivery?.result, payload);
   const worldRecord = validWorldRecord(delivery?.worldRecord)
     ? delivery.worldRecord
     : null;
 
-  if (!isValidDelivery({ deliveryId, payload })) {
+  if (!isValidDelivery({ deliveryId, payload }) || !result) {
     message.ack();
     return;
   }
@@ -224,7 +249,20 @@ async function consumeMessage(message, env) {
   await setDeliveryStatus(env, deliveryId, "sending");
 
   try {
-    const response = await fetch(env.DISCORD_WEBHOOK_URL, {
+    const webhookUrl =
+      result === "Victory" ? env.WIN_WEBHOOK_URL : env.DISCORD_WEBHOOK_URL;
+    if (!webhookUrl) {
+      await setDeliveryStatus(
+        env,
+        deliveryId,
+        "queued",
+        `Missing ${result === "Victory" ? "win" : "loss"} webhook secret`,
+      );
+      message.retry({ delaySeconds: 30 });
+      return;
+    }
+
+    const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
