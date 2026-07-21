@@ -1,23 +1,18 @@
+Exit code: 0
+Wall time: 0.6 seconds
+Output:
 {
-  "name": "roblox-group-proxy",
+  "name": "solo-webhook-relay",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
-  "keywords": [
-    "roblox",
-    "proxy",
-    "group",
-    "api"
-  ],
-  "author": "",
-  "license": "ISC",
-  "description": "A proxy server for fetching Roblox group members",
-  "dependencies": {
-    "express": "^5.1.0",
-    "node-fetch": "^3.3.2"
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }
+
