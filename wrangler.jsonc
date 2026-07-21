@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "solo-webhook-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-21",
+  "queues": {
+    "producers": [
+      {
+        "binding": "SOLO_QUEUE",
+        "queue": "solo-webhook-results"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "solo-webhook-results",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 100,
+        "max_concurrency": 1,
+        "dead_letter_queue": "solo-webhook-dead"
+      }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "solo-webhook-relay",
+      "database_id": "a8940958-8744-4ccc-8038-97912665d628"
+    }
+  ]
+}
