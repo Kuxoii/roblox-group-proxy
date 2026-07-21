@@ -34,6 +34,34 @@ function isValidDelivery(body) {
   );
 }
 
+function validWorldRecord(record) {
+  return Boolean(
+    record &&
+      typeof record.runId === "string" &&
+      /^[A-Za-z0-9_-]{8,128}$/.test(record.runId) &&
+      Number.isInteger(record.userId) &&
+      record.userId > 0 &&
+      Number.isInteger(record.durationSeconds) &&
+      record.durationSeconds >= 0 &&
+      record.durationSeconds <= 7 * 24 * 60 * 60 &&
+      Number.isInteger(record.achievedAt) &&
+      record.achievedAt > 0,
+  );
+}
+
+function downgradeWorldRecord(payload) {
+  const embed = payload?.embeds?.[0];
+  if (!embed || typeof embed !== "object") return;
+  embed.title = "Solo Mode Cleared";
+  embed.color = 0x57f287;
+  for (const field of embed.fields || []) {
+    if (field?.name === "World record") {
+      field.value = "â€”";
+      break;
+    }
+  }
+}
+
 function limitedError(value) {
   return String(value ?? "Unknown error").slice(0, MAX_ERROR_LENGTH);
 }
@@ -101,6 +129,9 @@ async function enqueueRequest(request, env) {
 
   // Never allow a game-controlled payload to ping Discord users or roles.
   body.payload.allowed_mentions = { parse: [] };
+  const worldRecord = validWorldRecord(body.worldRecord)
+    ? body.worldRecord
+    : null;
 
   const receipt = await env.DB.prepare(
     "SELECT status FROM deliveries WHERE id = ?",
@@ -116,19 +147,42 @@ async function enqueueRequest(request, env) {
   }
 
   const now = Date.now();
-  await env.DB.prepare(
-    `INSERT INTO deliveries (id, status, created_at, updated_at, last_error)
-     VALUES (?, 'queued', ?, ?, NULL)
-     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-  )
-    .bind(body.deliveryId, now, now)
-    .run();
+  const statements = [
+    env.DB.prepare(
+      `INSERT INTO deliveries (id, status, created_at, updated_at, last_error)
+       VALUES (?, 'queued', ?, ?, NULL)
+       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+    ).bind(body.deliveryId, now, now),
+  ];
+  if (worldRecord) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO world_records (record_key, run_id, user_id, duration_seconds, achieved_at)
+         VALUES ('solo', ?, ?, ?, ?)
+         ON CONFLICT(record_key) DO UPDATE SET
+           run_id = excluded.run_id,
+           user_id = excluded.user_id,
+           duration_seconds = excluded.duration_seconds,
+           achieved_at = excluded.achieved_at
+         WHERE excluded.duration_seconds < world_records.duration_seconds
+            OR (excluded.duration_seconds = world_records.duration_seconds
+                AND excluded.achieved_at < world_records.achieved_at)`,
+      ).bind(
+        worldRecord.runId,
+        worldRecord.userId,
+        worldRecord.durationSeconds,
+        worldRecord.achievedAt,
+      ),
+    );
+  }
+  await env.DB.batch(statements);
 
   // Re-enqueuing an accepted ID is safe. The single consumer checks the D1
   // receipt before contacting Discord, covering a lost HTTP acknowledgement.
   await env.SOLO_QUEUE.send({
     deliveryId: body.deliveryId,
     payload: body.payload,
+    worldRecord,
   });
 
   return json({ accepted: true, deliveryId: body.deliveryId }, 202);
@@ -138,6 +192,9 @@ async function consumeMessage(message, env) {
   const delivery = message.body;
   const deliveryId = delivery?.deliveryId;
   const payload = delivery?.payload;
+  const worldRecord = validWorldRecord(delivery?.worldRecord)
+    ? delivery.worldRecord
+    : null;
 
   if (!isValidDelivery({ deliveryId, payload })) {
     message.ack();
@@ -153,6 +210,15 @@ async function consumeMessage(message, env) {
   if (receipt?.status === "sent" || receipt?.status === "failed") {
     message.ack();
     return;
+  }
+
+  if (worldRecord) {
+    const currentRecord = await env.DB.prepare(
+      "SELECT run_id FROM world_records WHERE record_key = 'solo'",
+    ).first();
+    if (!currentRecord || currentRecord.run_id !== worldRecord.runId) {
+      downgradeWorldRecord(payload);
+    }
   }
 
   await setDeliveryStatus(env, deliveryId, "sending");
@@ -209,3 +275,4 @@ export default {
     }
   },
 };
+
